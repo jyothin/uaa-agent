@@ -1,6 +1,7 @@
-"""uaa-agent package initialization.
+"""uaa_agent package.
 
-Re-export public module(s) for convenience.
+Minimal __init__ to avoid fragile relative imports during test collection.
+Import heavy modules (like agent) lazily if/when needed by consumers.
 """
 
-from . import agent as agent  # noqa: F401 (re-export)
+__all__: list[str] = []

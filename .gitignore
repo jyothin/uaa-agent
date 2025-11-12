@@ -47,3 +47,5 @@ htmlcov/
 tmp/
 *.tmp
 
+## Local diagnostics artifacts (not needed in VCS)
+diagnostics_output/
