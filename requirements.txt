@@ -1,2 +1,18 @@
-pip>=25.2
+###############################################
+# Runtime Dependencies
+# (Minimum versions retained; pin exactly later if reproducibility required)
+###############################################
+GitPython>=3.1.43
 google-adk>=1.16.0
+python-dotenv>=1.0.1
+
+###############################################
+# Development / QA Tools (not required in production runtime)
+###############################################
+pytest>=8.3.3
+ruff>=0.7.3
+
+# NOTE:
+# - Removed 'pip' from requirements; managing installer inside requirements is unnecessary.
+# - If you want to freeze versions, consider using a lock file (e.g., pip-tools) or switch to
+#   '==' pins and update periodically.
