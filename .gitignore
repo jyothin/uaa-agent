@@ -1,0 +1,49 @@
+## Python virtual environments
+venv/
+.venv/
+
+## Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+## Bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+## Environment & secrets
+.env
+.env.*
+!.env.example
+
+## IDE/editor
+.idea/
+.vscode/
+
+## OS / misc
+.DS_Store
+
+## GitHub metadata (keep instructions tracked)
+# Ignore general GitHub workflows if desired (uncomment if not needed)
+# .github/workflows/
+
+# Snyk Security Extension - AI Rules (auto-generated) - keep tracked explicitly
+!/.github/instructions/snyk_rules.instructions.md
+
+# Ignore coverage and reports
+.coverage*
+coverage.xml
+htmlcov/
+
+## Logs
+*.log
+
+## Temporary test artifacts
+tmp/
+*.tmp
+

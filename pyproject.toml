@@ -1,0 +1,18 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "C4", "SIM", "UP", "PL"]
+ignore = ["E203", "E501"]
+preview = false
+exclude = [".git", "__pycache__", ".venv", "build", "dist"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agent"]
+force-single-line = false
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "single"
+line-ending = "lf"
