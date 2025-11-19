@@ -1,11 +1,13 @@
 import os
 import time
 from threading import Event
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 # Import the module under test
 import agent
 
+ONE = 1
+TWO = 2
 THREE = 3
 
 @patch('agent.Repo')
@@ -109,3 +111,115 @@ def test_clone_repository_cancelled_before_start(mock_repo):
                 for d in dirs:
                     os.rmdir(os.path.join(root, d))
             os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_build_uaa_success(mock_run):
+    # Simulate successful build
+    mock_run.return_value = MagicMock(stdout='Success', returncode=0)
+    tmpdir = '/tmp/test_build_uaa_success'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        # Should succeed if directory exists and subprocess.run returns success
+        result = agent.build_uaa(tmpdir)
+        assert result is True
+        mock_run.assert_called_once_with(['./gradlew', 'build'], check=True, capture_output=True, text=True)
+    finally:
+        # Cleanup
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_build_uaa_failure(mock_run):
+    # Simulate build failure
+    mock_run.side_effect = Exception('Build failed')
+    repo_url = 'https://example.com/repo.git'
+    tmpdir = '/tmp/test_build_uaa_failure'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.build_uaa(tmpdir)
+        assert result is False
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_build_uaa_no_directory(mock_run):
+    # Directory does not exist
+    repo_url = 'https://example.com/repo.git'
+    tmpdir = '/tmp/nonexistent_build_uaa_dir'
+    if os.path.isdir(tmpdir):
+        for root, dirs, files in os.walk(tmpdir, topdown=False):
+            for f in files:
+                os.remove(os.path.join(root, f))
+            for d in dirs:
+                os.rmdir(os.path.join(root, d))
+        os.rmdir(tmpdir)
+    result = agent.build_uaa(tmpdir)
+    assert result is False
+
+
+@patch('agent.subprocess.run')
+def test_run_uaa_success(mock_run):
+    # Simulate successful run
+    mock_run.return_value = MagicMock(stdout='Run Success', returncode=0)
+    tmpdir = '/tmp/test_run_uaa_success'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.run_uaa(tmpdir)
+        assert result is True
+        mock_run.assert_called_once_with(['./gradlew', 'run'], check=True, capture_output=True, text=True)
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_run_uaa_failure(mock_run):
+    # Simulate run failure
+    mock_run.side_effect = Exception('Run failed')
+    tmpdir = '/tmp/test_run_uaa_failure'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.run_uaa(tmpdir)
+        assert result is False
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_run_uaa_no_directory(mock_run):
+    # Directory does not exist
+    tmpdir = '/tmp/nonexistent_run_uaa_dir'
+    if os.path.isdir(tmpdir):
+        for root, dirs, files in os.walk(tmpdir, topdown=False):
+            for f in files:
+                os.remove(os.path.join(root, f))
+            for d in dirs:
+                os.rmdir(os.path.join(root, d))
+        os.rmdir(tmpdir)
+    result = agent.run_uaa(tmpdir)
+    assert result is False

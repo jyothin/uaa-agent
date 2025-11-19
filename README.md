@@ -16,7 +16,7 @@ The agent behavior can be customized via the following environment variables:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `UAA_MODEL` | `gemini-2.5-flash` | Model name passed when constructing the root `Agent` (loaded via `config.py`). |
+| `MODEL` | `gemini-2.5-flash` | Model name passed when constructing the root `Agent` (loaded via `config.py`). |
 | `UAA_REPO_URL` | `https://github.com/cloudfoundry/uaa` | Overrides repository URL used by `_example_clone` helper. |
 | `LOG_LEVEL` | `INFO` | Controls logging verbosity when running `agent.py` as a script. Standard levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 | `UAA_CLONE_BASE_BACKOFF` | `1.0` | Base seconds for exponential backoff between clone retries in `clone_repository` (used when reducing args). Set lower (e.g. `0.01`) for faster test cycles. |
@@ -41,7 +41,7 @@ Either export variables inline or rely on `.env`:
 
 ```bash
 # Inline export example
-LOG_LEVEL=DEBUG UAA_MODEL=gemini-2.5-flash UAA_REPO_URL=https://github.com/cloudfoundry/uaa python agent.py
+LOG_LEVEL=DEBUG MODEL=gemini-2.5-flash UAA_REPO_URL=https://github.com/cloudfoundry/uaa python agent.py
 ```
 
 ## Testing
@@ -85,10 +85,10 @@ Local commands:
 ```bash
 python -m coverage run -m pytest -q
 python -m coverage report -m
-python -m coverage xml   # generates coverage.xml (replace xml with html for HTML format)
+python -m coverage html   # generates html files in htmlcov (replace html with xml to coverage.xml file)
 ```
 
-The CI workflow enforces a minimum coverage threshold (currently **90%**). Adjust by editing the `--fail-under` value in `.github/workflows/ci.yml`.
+The CI workflow enforces a minimum coverage threshold (currently **80%**). Adjust by editing the `--fail-under` value in `.github/workflows/ci.yml`.
 
 The coverage badge uses Codecov (branch: `dev`). For private repositories set a `CODECOV_TOKEN` secret; public repos usually work without it. You can adjust badge branch by changing `branch/dev` in the badge URL.
 
@@ -161,3 +161,17 @@ If CI fails due to lint issues, run the above commands locally and re-commit.
 ### Notes
 * If `UAA_REPO_URL` is unreachable the clone logic will retry with exponential backoff (see `clone_repository`).
 * Set `LOG_LEVEL=DEBUG` to inspect retry behavior and repository cloning details.
+
+# Test
+[API Testing (curl)](https://google.github.io/adk-docs/deploy/gke/#api-testing-curl_1)
+
+# Run
+Run as a CLI
+	```bash
+	adk run agent
+	```
+
+Run as a webapp
+	```bash
+	adk web --port 8000
+	```

@@ -28,7 +28,7 @@ class Settings:
     @staticmethod
     def from_env() -> Settings:
         return Settings(
-            model=os.getenv('UAA_MODEL', 'gemini-2.5-flash'),
+            model=os.getenv('MODEL', 'gemini-2.5-flash'),
             repo_url=os.getenv('UAA_REPO_URL', 'https://github.com/cloudfoundry/uaa'),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
         )

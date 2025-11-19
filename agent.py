@@ -9,6 +9,7 @@ Refinements:
 # Standard library imports (alphabetized)
 import logging
 import os
+import subprocess
 import tempfile  # secure temporary directory creation
 import threading
 import time
@@ -19,12 +20,18 @@ from google.adk.agents.llm_agent import Agent
 
 # Local application imports
 from config import settings
+from uaa_server_information import UAAServerInformationClient
 
 logger = logging.getLogger(__name__)
 
 # Goals
 # 1. Get UAA server version
 # 2. Install UAA server
+# 3. Build UAA server
+# 4. Run UAA server
+# 5. Update UAA server with appropriate human approvals
+# 6. Constantly look for changes in the UAA repo and pull them in automatically (use GitHub tools)
+# 7. Inform client about new updates to the UAA server
 
 
 # root_agent initialization will occur after function definitions to ensure names are defined.
@@ -35,10 +42,40 @@ def get_uaa_version() -> str:
     return ''
 
 
-def install_uaa(repo_url, destination_path) -> bool:
+def build_uaa(destination_path) -> bool:
     """Install UAA server"""
-    status = clone_repository(repo_url, destination_path)
-    return status
+    try:
+        if not os.path.isdir(destination_path):
+            logger.error("Destination path does not exist or is not a directory: %s", destination_path)
+            return False
+        os.chdir(destination_path)
+        result_build = subprocess.run(['./gradlew', 'build'], check=True, capture_output=True, text=True)
+        logger.info("Build output:\n%s", result_build.stdout)
+        if result_build:
+            return True
+        else:
+            return False
+    except Exception as e:
+        logger.error("Build or run failed: %s", e)
+        return False
+
+
+def run_uaa(destination_path) -> bool:
+    """Run UAA server using gradlew run command"""
+    try:
+        if not os.path.isdir(destination_path):
+            logger.error("Destination path does not exist or is not a directory: %s", destination_path)
+            return False
+        os.chdir(destination_path)
+        result_run = subprocess.run(['./gradlew', 'run'], check=True, capture_output=True, text=True)
+        logger.info("Run output:\n%s", result_run.stdout)
+        if result_run:
+            return True
+        else:
+            return False
+    except Exception as e:
+        logger.error("Run command failed: %s", e)
+        return False
 
 
 def clone_repository(
@@ -154,13 +191,38 @@ def _example_clone(repo_url: str | None = None) -> None:
             logger.warning('Clone failed; temporary directory will still be cleaned up.')
 
 
+def ask_human_approval(prompt: str = "Do you approve this action? (y/n): ") -> bool:
+    """Prompt the user for human approval and return True if approved, False otherwise."""
+    while True:
+        response = input(prompt).strip().lower()
+        if response in ("y", "yes"):
+            return True
+        elif response in ("n", "no"):
+            return False
+        else:
+            print("Please enter 'y' or 'n'.")
+
+
 # Now initialize root_agent after function definitions
 root_agent = Agent(
     model=settings.model,
     name='root_agent',
     description='Tells the current time and current weather in a specified city.',
     instruction='You are a helpful assistant that tells the current time and current weather in cities.',
-    tools=[get_uaa_version, install_uaa],
+    tools=[
+        get_uaa_version,
+        clone_repository,
+        build_uaa,
+        run_uaa,
+        ask_human_approval,
+        UAAServerInformationClient.get_server_information,
+        UAAServerInformationClient.get_openid_configuration,
+        UAAServerInformationClient.create_passcode,
+        UAAServerInformationClient.get_passcode,
+        UAAServerInformationClient.get_auto_login,
+        UAAServerInformationClient.create_auto_login,
+        UAAServerInformationClient.perform_login,
+    ],
 )
 
 if __name__ == '__main__':
@@ -170,4 +232,4 @@ if __name__ == '__main__':
     )
     logger.info('Logger initialized (script execution).')
     # Only run the example clone when invoked directly.
-    _example_clone()
+    # _example_clone()

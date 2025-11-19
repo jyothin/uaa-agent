@@ -40,7 +40,7 @@ def capture_env():
         f"CWD: {os.getcwd()}",
     ]
     # Key env vars
-    for key in ["UAA_MODEL", "UAA_REPO_URL", "LOG_LEVEL"]:
+    for key in ["MODEL", "UAA_REPO_URL", "LOG_LEVEL"]:
         lines.append(f"ENV {key}={os.getenv(key)}")
     write(os.path.join(OUT_DIR, 'env_info.txt'), "\n".join(lines))
 
