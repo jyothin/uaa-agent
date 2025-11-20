@@ -8,19 +8,21 @@ Refinements:
 
 # Standard library imports (alphabetized)
 import logging
+import signal
 import os
 import subprocess
 import tempfile  # secure temporary directory creation
 import threading
 import time
+from typing import Optional
 
 # Third-party imports
 from git import Repo
 from google.adk.agents.llm_agent import Agent
 
 # Local application imports
-from config import settings
-from uaa_server_information import UAAServerInformationClient
+from .config import settings
+from .uaa_server_information import UAAServerInformationClient
 
 logger = logging.getLogger(__name__)
 
@@ -38,43 +40,291 @@ logger = logging.getLogger(__name__)
 
 
 def get_uaa_version() -> str:
-    """Get the current UAA server version"""
+    """Get the current UAA server version (placeholder)."""
     return ''
 
 
-def build_uaa(destination_path) -> bool:
-    """Install UAA server"""
+def sdk_use_java_version(desired_version: str = "21.0.9-amzn") -> bool:
+    """Attempt to switch the active Java version using SDKMAN.
+
+    This runs `sdk use java <desired_version>` inside a login shell so that SDKMAN's environment is loaded.
+
+    Args:
+        desired_version: The Java version identifier managed by SDKMAN.
+    Returns:
+        True if the command executed successfully, False otherwise.
+    """
+    sdk_cmd = f"sdk use java {desired_version}"
+    sdk_result = subprocess.run(['bash', '-lc', sdk_cmd], capture_output=True, text=True)
+    if sdk_result.returncode == 0:
+        logger.info("Switched Java version using SDKMAN: %s", desired_version)
+        return True
+    logger.debug(
+        "Failed to switch Java version to %s (exit %s). stderr: %s",
+        desired_version,
+        sdk_result.returncode,
+        sdk_result.stderr.strip(),
+    )
+    return False
+
+
+def sdk_set_sdkmanrc_file(desired_version: str,
+                          destination_path: str) -> bool:
+    """Create or update the .sdkmanrc file to specify the desired Java version.
+
+    Args:
+        desired_version: The Java version identifier managed by SDKMAN.
+    Returns:
+        True if the .sdkmanrc file was created or updated successfully, False otherwise.
+    """
     try:
         if not os.path.isdir(destination_path):
             logger.error("Destination path does not exist or is not a directory: %s", destination_path)
             return False
+        logger.info("Changing to destination path: %s", destination_path)
         os.chdir(destination_path)
-        result_build = subprocess.run(['./gradlew', 'build'], check=True, capture_output=True, text=True)
-        logger.info("Build output:\n%s", result_build.stdout)
-        if result_build:
+
+        with open('.sdkmanrc', 'w', encoding="utf-8") as sdkmanrc:
+            sdkmanrc.write(f"java={desired_version}\n")
+        logger.info(".sdkmanrc file created/updated with Java version: %s", desired_version)
+        return True
+    except Exception as e:
+        logger.error("Failed to create/update .sdkmanrc file: %s", e)
+        return False
+
+
+def get_java_version() -> str:
+    """Return the installed Java version string (first line of `java -version`).
+
+    Performs a semantic check for Amazon Corretto 21.0.9 and logs accordingly.
+    Returns an error string if Java is missing or the command fails.
+    """
+    try:
+        result = subprocess.run(['java', '-version'], capture_output=True, text=True, check=True)
+        version_info = result.stderr.splitlines()[0]
+        if '21.0.9-amzn' in version_info:
+            logger.info("Detected Amazon Corretto JDK 21.0.9.")
+        else:
+            logger.debug("Java version is not Amazon Corretto 21.0.9: %s", version_info)
+        logger.info("Java version found: %s", version_info)
+        return version_info
+    except FileNotFoundError:
+        logger.error("Java is not installed or not found in PATH.")
+        return "Java not found"
+    except subprocess.CalledProcessError as e:
+        logger.error("Error occurred while checking Java version: %s", e)
+        return "Error checking Java version"
+
+
+def wait_for_port(host: str = '127.0.0.1', port: int = 8080, timeout: int = 30, interval: float = 1.0) -> bool:
+    """Probe a TCP host:port until it becomes reachable or timeout expires.
+
+    Args:
+        host: Hostname or IP to probe.
+        port: TCP port to check.
+        timeout: Total seconds to wait before giving up.
+        interval: Seconds to sleep between attempts.
+    Returns:
+        True if the port is reachable within timeout, otherwise False.
+    """
+    import socket, time as _time
+    deadline = _time.time() + timeout
+    attempt = 0
+    while _time.time() < deadline:
+        attempt += 1
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(interval)
+            if sock.connect_ex((host, port)) == 0:
+                logger.info("Port %d on %s is reachable after %d attempt(s).", port, host, attempt)
+                return True
+        logger.debug("Port %d on %s not open yet (attempt %d).", port, host, attempt)
+        _time.sleep(interval)
+    logger.warning("Port %d on %s not reachable within %ds.", port, host, timeout)
+    return False
+
+
+def stop_uaa(pid: int, grace_seconds: int = 10) -> bool:
+    """Gracefully stop a detached UAA process identified by its PID.
+
+    Sends SIGTERM to the process group first (assuming it was started with a new session),
+    waits up to grace_seconds for it to exit, then sends SIGKILL if still alive.
+
+    Args:
+        pid: PID of the originally launched UAA process (also the process group id).
+        grace_seconds: Seconds to wait after SIGTERM before forcing termination.
+    Returns:
+        True if the process was terminated (graceful or forced); False if not found or error.
+    """
+    try:
+        os.killpg(pid, signal.SIGTERM)
+        logger.info("Sent SIGTERM to UAA process group %d", pid)
+    except ProcessLookupError:
+        logger.warning("Process group %d not found (already stopped).", pid)
+        return False
+    except Exception as e:
+        logger.error("Failed sending SIGTERM to %d: %s", pid, e)
+        return False
+
+    end = time.time() + grace_seconds
+    while time.time() < end:
+        try:
+            os.kill(pid, 0)  # Check existence
+        except ProcessLookupError:
+            logger.info("UAA process group %d stopped gracefully.", pid)
+            return True
+        time.sleep(0.5)
+
+    try:
+        os.killpg(pid, signal.SIGKILL)
+        logger.warning("Forced SIGKILL sent to UAA process group %d after %ds grace.", pid, grace_seconds)
+        return True
+    except ProcessLookupError:
+        logger.info("Process group %d already gone during SIGKILL attempt.", pid)
+        return True
+    except Exception as e:
+        logger.error("Failed sending SIGKILL to %d: %s", pid, e)
+        return False
+
+
+def build_uaa(destination_path: str) -> bool:
+    """Build the UAA server at the given filesystem path.
+
+    Args:
+        destination_path: Path to the cloned UAA repository root.
+    Returns:
+        True if the Gradle build succeeds, otherwise False.
+    """
+    try:
+        if not os.path.isdir(destination_path):
+            logger.error("Destination path does not exist or is not a directory: %s", destination_path)
+            return False
+        logger.info("Changing to destination path: %s", destination_path)
+        os.chdir(destination_path)
+
+        result: dict[str, object] = {}
+
+        def _run_build() -> None:
+            try:
+                # Use .sdkmanrc to set Java version, activate SDKMAN env, then build with Gradle.
+                shell_cmd = (
+                    'source "$HOME/.sdkman/bin/sdkman-init.sh" && '
+                    'sdk env && '
+                    './gradlew build'
+                )
+                proc = subprocess.run(
+                    ['bash', '-lc', shell_cmd],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # Optional: prevent hanging builds (adjust as needed)
+                )
+                result['stdout'] = proc.stdout
+                result['stderr'] = proc.stderr
+                result['success'] = proc.returncode == 0
+            except Exception as exc:  # capture any failure
+                result['error'] = exc
+                result['success'] = False
+
+        logger.info("Starting build in background thread...\n")
+        thread = threading.Thread(target=_run_build, daemon=False)
+        thread.start()
+        thread.join()  # Wait until build completes (can be extended with timeout if needed)
+
+        if result.get('success'):
+            stderr = result.get('stderr')
+            if stderr:
+                logger.debug("Build stderr:\n%s", stderr)
             return True
         else:
+            error = result.get('error')
+            if error:
+                logger.error("Gradle build failed: %s", error)
             return False
     except Exception as e:
         logger.error("Build or run failed: %s", e)
         return False
 
+        # Ensure gradlew exists
+        gradlew = os.path.join(destination_path, "gradlew")
+        if not (os.path.isfile(gradlew) and os.access(gradlew, os.X_OK)):
+            logger.error("gradlew not found or not executable at %s", gradlew)
+            return {"success": False, "error": "gradlew missing"}
 
-def run_uaa(destination_path) -> bool:
-    """Run UAA server using gradlew run command"""
+
+def run_uaa_detached(destination_path: str, java_version: str = "21.0.9-amzn") -> dict:
+    """
+    Start UAA via Gradle in the background and detach.
+    Returns dict with pid, stdout_log, stderr_log, success flag (launch only).
+    """
+    try:
+        if not os.path.isdir(destination_path):
+            logger.error("Destination path invalid: %s", destination_path)
+            return {"success": False, "error": "invalid path"}
+        os.chdir(destination_path)
+
+        stdout_log = os.path.join(destination_path, "uaa_run.out")
+        stderr_log = os.path.join(destination_path, "uaa_run.err")
+
+        shell_cmd = (
+            'source "$HOME/.sdkman/bin/sdkman-init.sh" && '
+            'sdk env && '
+            './gradlew run'
+        )
+
+        proc = subprocess.Popen(
+            ['bash', '-lc', shell_cmd],
+            stdout=open(stdout_log, "w"),
+            stderr=open(stderr_log, "w"),
+            start_new_session=True  # Detach process group
+        )
+
+        logger.info("Started UAA (detached) with PID %d", proc.pid)
+
+        return {
+            "success": True,
+            "pid": proc.pid,
+            "stdout_log": stdout_log,
+            "stderr_log": stderr_log,
+            "java_version": java_version
+        }
+    except Exception as e:
+        logger.error("Failed to launch UAA detached: %s", e)
+        return {"success": False, "error": str(e)}
+
+
+def clean_uaa(destination_path: str) -> bool:
+    """Clean the UAA server build artifacts by running `./gradlew clean`.
+
+    Args:
+        destination_path: Path to the cloned UAA repository root.
+    Returns:
+        True if the Gradle clean command succeeds, otherwise False.
+    """
     try:
         if not os.path.isdir(destination_path):
             logger.error("Destination path does not exist or is not a directory: %s", destination_path)
             return False
         os.chdir(destination_path)
-        result_run = subprocess.run(['./gradlew', 'run'], check=True, capture_output=True, text=True)
+
+        shell_cmd = (
+            'source "$HOME/.sdkman/bin/sdkman-init.sh" && '
+            'sdk env && '
+            './gradlew clean'
+        )
+        result_run = subprocess.run(
+            ['bash', '-lc', shell_cmd],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=600
+        )
         logger.info("Run output:\n%s", result_run.stdout)
-        if result_run:
-            return True
-        else:
-            return False
+        stderr = result_run.stderr
+        if stderr:
+            logger.debug("Run stderr:\n%s", stderr)
+        return result_run.returncode == 0
     except Exception as e:
-        logger.error("Run command failed: %s", e)
+        logger.error("Clean command failed: %s", e)
         return False
 
 
@@ -82,8 +332,7 @@ def clone_repository(
     repo_url: str,
     destination_path: str,
     max_retries: int = 3,
-    attempt_timeout: float | None = None,
-    cancel_event: threading.Event | None = None,
+    attempt_timeout: Optional[float] = None,
 ) -> bool:
     """Clone a git repository to a destination path with retry logic and optional timeout.
 
@@ -92,7 +341,6 @@ def clone_repository(
         destination_path: Filesystem path where the repo should be cloned.
     max_retries: Number of retry attempts on failure (not counting initial attempt).
         attempt_timeout: Maximum seconds allowed for a single clone attempt. If exceeded, the attempt is considered failed and retried.
-        cancel_event: Optional threading.Event which, when set, causes an early abort before starting a new attempt.
 
     Returns:
         True if clone succeeds, False otherwise.
@@ -126,11 +374,6 @@ def clone_repository(
     attempt = 0
     # Loop attempts: initial attempt + retries until success or exhaustion
     while attempt <= max_retries:
-        if cancel_event and cancel_event.is_set():
-            logger.info(
-                "Cancellation event set before attempt %d; aborting clone for '%s'", attempt + 1, repo_url
-            )
-            return False
         try:
             if attempt_timeout is None:
                 Repo.clone_from(repo_url, destination_path)
@@ -162,13 +405,7 @@ def clone_repository(
                 e,
                 sleep_for,
             )
-            # Respect cancellation between attempts
-            end_time = time.time() + sleep_for
-            while time.time() < end_time:
-                if cancel_event and cancel_event.is_set():
-                    logger.info("Cancellation detected during backoff; aborting further retries.")
-                    return False
-                time.sleep(0.05)  # granularity for responsive cancellation
+            time.sleep(sleep_for)
     return False  # Defensive fallback
 
 
@@ -204,24 +441,31 @@ def ask_human_approval(prompt: str = "Do you approve this action? (y/n): ") -> b
 
 
 # Now initialize root_agent after function definitions
+uaa_server_information_client = UAAServerInformationClient(base_url=settings.uaa_base_url)
 root_agent = Agent(
     model=settings.model,
     name='root_agent',
-    description='Tells the current time and current weather in a specified city.',
-    instruction='You are a helpful assistant that tells the current time and current weather in cities.',
+    description='Agent to manage users, user authentication and user authorization.',
+    instruction='You are a helpful assistant that manages a UAA server and learns about users.',
     tools=[
         get_uaa_version,
         clone_repository,
+        get_java_version,
+        sdk_set_sdkmanrc_file,
+        sdk_use_java_version,
         build_uaa,
-        run_uaa,
-        ask_human_approval,
-        UAAServerInformationClient.get_server_information,
-        UAAServerInformationClient.get_openid_configuration,
-        UAAServerInformationClient.create_passcode,
-        UAAServerInformationClient.get_passcode,
-        UAAServerInformationClient.get_auto_login,
-        UAAServerInformationClient.create_auto_login,
-        UAAServerInformationClient.perform_login,
+        clean_uaa,
+        run_uaa_detached,
+        wait_for_port,
+        stop_uaa,
+        # ask_human_approval,
+        uaa_server_information_client.get_server_information,
+        uaa_server_information_client.get_openid_configuration,
+        uaa_server_information_client.create_passcode,
+        uaa_server_information_client.get_passcode,
+        uaa_server_information_client.get_auto_login,
+        uaa_server_information_client.create_auto_login,
+        uaa_server_information_client.perform_login,
     ],
 )
 
