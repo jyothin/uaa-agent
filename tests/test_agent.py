@@ -1,6 +1,5 @@
 import os
 import time
-from threading import Event
 from unittest.mock import MagicMock, patch
 
 # Import the module under test

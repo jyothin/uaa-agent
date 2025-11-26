@@ -30,8 +30,16 @@ try:
     from .uaa_server_information import UAAServerInformationClient
 except ImportError:
     from uaa_server_information import UAAServerInformationClient
+try:
+    from .uaa_admin_config import update_admin_client_secret
+except ImportError:
+    from uaa_admin_config import update_admin_client_secret
 
 logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=settings.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger.info('Logger initialized (script execution).')
 
 # Goals
 # 1. Get UAA server version
@@ -194,6 +202,7 @@ def stop_uaa(pid: int, grace_seconds: int = 10) -> bool:
 
 def build_uaa(destination_path: str) -> bool:
     """Build the UAA server at the given filesystem path.
+       Before building, ensure that the .sdkmanrc file is set to the desired Java version.
 
     Args:
         destination_path: Path to the cloned UAA repository root.
@@ -261,6 +270,7 @@ def run_uaa_detached(destination_path: str, java_version: str = "21.0.9-amzn") -
     """
     Start UAA via Gradle in the background and detach.
     Returns dict with pid, stdout_log, stderr_log, success flag (launch only).
+    Before running, ensure that the client_secret for the 'admin' client ID is updated in uaa.yaml.
     """
     try:
         if not os.path.isdir(destination_path):
@@ -457,8 +467,9 @@ root_agent = Agent(
         get_java_version,
         sdk_set_sdkmanrc_file,
         sdk_use_java_version,
-        build_uaa,
         clean_uaa,
+        build_uaa,
+        update_admin_client_secret,
         run_uaa_detached,
         wait_for_port,
         stop_uaa,
@@ -473,12 +484,12 @@ root_agent = Agent(
     ],
 )
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # Configure logging only when running as a script to avoid overriding host application logging.
-    logging.basicConfig(
-        level=settings.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    logger.info('Logger initialized (script execution).')
+    # logging.basicConfig(
+    #     level=settings.log_level, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    # )
+    # logger.info('Logger initialized (script execution).')
     # Only run the example clone when invoked directly.
     # _example_clone()
 

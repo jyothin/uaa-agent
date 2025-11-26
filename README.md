@@ -24,6 +24,8 @@ The agent behavior can be customized via the following environment variables:
 | `UAA_REPO_URL` | `https://github.com/cloudfoundry/uaa` | Overrides repository URL used by `_example_clone` helper. |
 | `LOG_LEVEL` | `INFO` | Controls logging verbosity when running `agent.py` as a script. Standard levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
 | `UAA_CLONE_BASE_BACKOFF` | `1.0` | Base seconds for exponential backoff between clone retries in `clone_repository` (used when reducing args). Set lower (e.g. `0.01`) for faster test cycles. |
+| `UAA_BASE_URL` | `http://localhost:8080/uaa` | Base URL for the UAA server. |
+| `UAA_JAVA_VERSION` | `21.0.9-amzn` | Java version should be at least 21. |
 
 The file `config.py` loads these values on import. If a local `.env` file exists it will be read automatically (using `python-dotenv`) without overriding already-set environment variables.
 
@@ -34,9 +36,10 @@ The file `config.py` loads these values on import. If a local `.env` file exists
 	cp .env.example .env
 	```
 2. Adjust values in `.env` as needed.
-3. Run the agent script:
+3. Run the agent:
 	```bash
-	python agent.py
+	cd ..
+	adk run uaa_agent
 	```
 
 ### Example
@@ -45,7 +48,7 @@ Either export variables inline or rely on `.env`:
 
 ```bash
 # Inline export example
-LOG_LEVEL=DEBUG MODEL=gemini-2.5-flash UAA_REPO_URL=https://github.com/cloudfoundry/uaa python agent.py
+LOG_LEVEL=DEBUG MODEL=gemini-2.5-flash UAA_REPO_URL=https://github.com/cloudfoundry/uaa adk run uaa_agent 
 ```
 
 ## Testing
