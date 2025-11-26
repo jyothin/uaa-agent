@@ -24,6 +24,7 @@ __pycache__/
 ## IDE/editor
 .idea/
 .vscode/
+uaa_agent.code-workspace
 
 ## OS / misc
 .DS_Store

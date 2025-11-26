@@ -8,21 +8,28 @@ Refinements:
 
 # Standard library imports (alphabetized)
 import logging
-import signal
 import os
+import signal
+import socket
 import subprocess
 import tempfile  # secure temporary directory creation
 import threading
 import time
-from typing import Optional
+import time as _time
 
 # Third-party imports
 from git import Repo
 from google.adk.agents.llm_agent import Agent
 
 # Local application imports
-from .config import settings
-from .uaa_server_information import UAAServerInformationClient
+try:
+    from .config import settings
+except ImportError:
+    from config import settings
+try:
+    from .uaa_server_information import UAAServerInformationClient
+except ImportError:
+    from uaa_server_information import UAAServerInformationClient
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +62,7 @@ def sdk_use_java_version(desired_version: str = "21.0.9-amzn") -> bool:
         True if the command executed successfully, False otherwise.
     """
     sdk_cmd = f"sdk use java {desired_version}"
-    sdk_result = subprocess.run(['bash', '-lc', sdk_cmd], capture_output=True, text=True)
+    sdk_result = subprocess.run(['bash', '-lc', sdk_cmd], check=False, capture_output=True, text=True)
     if sdk_result.returncode == 0:
         logger.info("Switched Java version using SDKMAN: %s", desired_version)
         return True
@@ -127,7 +134,6 @@ def wait_for_port(host: str = '127.0.0.1', port: int = 8080, timeout: int = 30, 
     Returns:
         True if the port is reachable within timeout, otherwise False.
     """
-    import socket, time as _time
     deadline = _time.time() + timeout
     attempt = 0
     while _time.time() < deadline:
@@ -271,12 +277,13 @@ def run_uaa_detached(destination_path: str, java_version: str = "21.0.9-amzn") -
             './gradlew run'
         )
 
-        proc = subprocess.Popen(
-            ['bash', '-lc', shell_cmd],
-            stdout=open(stdout_log, "w"),
-            stderr=open(stderr_log, "w"),
-            start_new_session=True  # Detach process group
-        )
+        with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
+            proc = subprocess.Popen(
+                ['bash', '-lc', shell_cmd],
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True  # Detach process group
+            )
 
         logger.info("Started UAA (detached) with PID %d", proc.pid)
 
@@ -332,7 +339,20 @@ def clone_repository(
     repo_url: str,
     destination_path: str,
     max_retries: int = 3,
-    attempt_timeout: Optional[float] = None,
+    attempt_timeout: float = 0.0,
+) -> bool:
+    """Clone a git repository with a simplified signature for agent tooling."""
+    return _clone_repository_with_cancel(
+        repo_url, destination_path, max_retries, attempt_timeout, cancel_event=None
+    )
+
+
+def _clone_repository_with_cancel(
+    repo_url: str,
+    destination_path: str,
+    max_retries: int = 3,
+    attempt_timeout: float = 0.0,
+    cancel_event: threading.Event | None = None,
 ) -> bool:
     """Clone a git repository to a destination path with retry logic and optional timeout.
 
@@ -374,6 +394,9 @@ def clone_repository(
     attempt = 0
     # Loop attempts: initial attempt + retries until success or exhaustion
     while attempt <= max_retries:
+        if cancel_event and cancel_event.is_set():
+            logger.info("Clone cancelled before attempt %d.", attempt)
+            return False
         try:
             if attempt_timeout is None:
                 Repo.clone_from(repo_url, destination_path)
@@ -407,25 +430,6 @@ def clone_repository(
             )
             time.sleep(sleep_for)
     return False  # Defensive fallback
-
-
-def _example_clone(repo_url: str | None = None) -> None:
-    """Example: clone UAA repo into an ephemeral temporary directory under /tmp.
-
-    The directory is cleaned up automatically when the context exits.
-    Repo URL can be overridden via env UAA_REPO_URL.
-    """
-    repo_url = repo_url or os.getenv('UAA_REPO_URL', 'https://github.com/cloudfoundry/uaa')
-    with tempfile.TemporaryDirectory(prefix='uaa_repo_', dir='/tmp') as tmpdir:
-        logger.info("Cloning repository '%s' into temporary dir: %s", repo_url, tmpdir)
-        success = clone_repository(repo_url, tmpdir)
-        if success:
-            try:
-                logger.info('Clone completed. Contents: %s', os.listdir(tmpdir))
-            except Exception:
-                logger.debug('Could not list contents of %s', tmpdir)
-        else:
-            logger.warning('Clone failed; temporary directory will still be cleaned up.')
 
 
 def ask_human_approval(prompt: str = "Do you approve this action? (y/n): ") -> bool:
@@ -477,3 +481,23 @@ if __name__ == '__main__':
     logger.info('Logger initialized (script execution).')
     # Only run the example clone when invoked directly.
     # _example_clone()
+
+# Examples
+
+def _example_clone(repo_url: str | None = None) -> None:
+    """Example: clone UAA repo into an ephemeral temporary directory under /tmp.
+
+    The directory is cleaned up automatically when the context exits.
+    Repo URL can be overridden via env UAA_REPO_URL.
+    """
+    repo_url = repo_url or os.getenv('UAA_REPO_URL', 'https://github.com/cloudfoundry/uaa')
+    with tempfile.TemporaryDirectory(prefix='uaa_repo_', dir='/tmp') as tmpdir:
+        logger.info("Cloning repository '%s' into temporary dir: %s", repo_url, tmpdir)
+        success = clone_repository(repo_url, tmpdir)
+        if success:
+            try:
+                logger.info('Clone completed. Contents: %s', os.listdir(tmpdir))
+            except Exception:
+                logger.debug('Could not list contents of %s', tmpdir)
+        else:
+            logger.warning('Clone failed; temporary directory will still be cleaned up.')

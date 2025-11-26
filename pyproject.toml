@@ -16,3 +16,7 @@ force-single-line = false
 indent-style = "space"
 quote-style = "single"
 line-ending = "lf"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"

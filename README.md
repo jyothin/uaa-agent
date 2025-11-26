@@ -5,10 +5,14 @@ Repo for code that is a UAA (User Authentication & Authorization) Agent.
 [![Coverage](https://codecov.io/gh/jyothin/uaa-agent/branch/dev/graph/badge.svg)](https://codecov.io/gh/jyothin/uaa-agent)
 
 # Create your virtual env
-`$> source ./venv/bin/activate`
+```bash
+source ./venv/bin/activate`
+```
 
 # Build
-`$> pip install -r requirements.txt`
+```bash
+pip install -r requirements.txt
+```
 
 ## Environment Variables
 
@@ -166,12 +170,14 @@ If CI fails due to lint issues, run the above commands locally and re-commit.
 [API Testing (curl)](https://google.github.io/adk-docs/deploy/gke/#api-testing-curl_1)
 
 # Run
+Go to the parent directory under which you see the `uaa_agent` folder
+
 Run as a CLI
-	```bash
-	adk run agent
-	```
+```bash
+adk run uaa_agent
+```
 
 Run as a webapp
-	```bash
-	adk web --port 8000
-	```
+```bash
+adk web --port 8000
+```

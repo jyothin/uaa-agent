@@ -2,11 +2,12 @@
 Python client for Cloud Foundry UAA Server Information API (version 78.5.0)
 Docs: https://docs.cloudfoundry.org/api/uaa/version/78.5.0/index.html#server-information
 """
+
 import requests
-from typing import Optional
+
 
 class UAAServerInformationClient:
-    def __init__(self, base_url: str, token: Optional[str] = None):
+    def __init__(self, base_url: str, token: str | None = None):
         self.base_url = base_url.rstrip('/')
         self.token = token
 
