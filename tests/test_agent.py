@@ -1,6 +1,6 @@
 import os
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, mock_open
 
 # Import the module under test
 import agent
@@ -175,7 +175,8 @@ def test_build_uaa_no_directory(mock_run):
 
 
 @patch('agent.subprocess.Popen')
-def test_run_uaa_success(mock_popen):
+@patch('builtins.open', new_callable=mock_open)
+def test_run_uaa_success(mock_file_open, mock_popen):
     # Simulate successful Popen
     mock_proc = MagicMock()
     mock_proc.pid = 12345
@@ -191,7 +192,7 @@ def test_run_uaa_success(mock_popen):
         shell_cmd = (
             'source "$HOME/.sdkman/bin/sdkman-init.sh" && '
             'sdk env && '
-            './gradlew run'
+            f'{tmpdir}/scripts/boot/boot-with-tls.sh'
         )
         
         # Get the arguments from the mock call
@@ -204,6 +205,10 @@ def test_run_uaa_success(mock_popen):
         assert 'start_new_session' in call_kwargs and call_kwargs['start_new_session'] is True
         assert 'stdout' in call_kwargs
         assert 'stderr' in call_kwargs
+
+        # Check that the PID file was written
+        mock_file_open.assert_any_call('proc.pid', 'w')
+        mock_file_open().write.assert_called_once_with(str(TEST_PID))
 
     finally:
         if os.path.isdir(tmpdir):
@@ -250,3 +255,101 @@ def test_run_uaa_no_directory(mock_popen):
         os.rmdir(tmpdir)
     result = agent.run_uaa_detached(tmpdir)
     assert result['success'] is False
+
+
+@patch('agent.subprocess.run')
+def test_get_java_version_success(mock_run):
+    # Simulate successful run
+    mock_run.return_value = MagicMock(stderr='openjdk version "21.0.9-amzn" 2024-10-15\nOther lines', returncode=0)
+    result = agent.get_java_version()
+    assert 'openjdk version "21.0.9-amzn"' in result
+    mock_run.assert_called_once_with(['java', '-version'], capture_output=True, text=True, check=True)
+
+
+@patch('agent.subprocess.run')
+def test_get_java_version_not_found(mock_run):
+    # Simulate FileNotFoundError
+    mock_run.side_effect = FileNotFoundError
+    result = agent.get_java_version()
+    assert result == "Java not found"
+
+
+@patch('agent.subprocess.run')
+def test_get_java_version_command_error(mock_run):
+    # Simulate CalledProcessError
+    mock_run.side_effect = agent.subprocess.CalledProcessError(1, ['java', '-version'])
+    result = agent.get_java_version()
+    assert result == "Error checking Java version"
+
+
+@patch('agent.subprocess.run')
+def test_get_java_version_from_sdkmanrc_success(mock_run):
+    # Simulate successful run
+    mock_run.return_value = MagicMock(stdout='java=21.0.9-amzn\n', returncode=0)
+    tmpdir = '/tmp/test_get_java_version_from_sdkmanrc_success'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.get_java_version_from_sdkmanrc(tmpdir)
+        assert '21.0.9-amzn' in result
+        mock_run.assert_called_once_with(['cat', f'{tmpdir}/.sdkmanrc'], capture_output=True, text=True, check=True)
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_get_java_version_from_sdkmanrc_not_found(mock_run):
+    # Simulate FileNotFoundError
+    mock_run.side_effect = FileNotFoundError
+    tmpdir = '/tmp/test_get_java_version_from_sdkmanrc_not_found'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.get_java_version_from_sdkmanrc(tmpdir)
+        assert result == "Java not found"
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_get_java_version_from_sdkmanrc_command_error(mock_run):
+    # Simulate CalledProcessError
+    mock_run.side_effect = agent.subprocess.CalledProcessError(1, ['cat', '.sdkmanrc'])
+    tmpdir = '/tmp/test_get_java_version_from_sdkmanrc_command_error'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.get_java_version_from_sdkmanrc(tmpdir)
+        assert result == "Error checking Java version"
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_get_java_version_from_sdkmanrc_no_directory(mock_run):
+    # Directory does not exist
+    tmpdir = '/tmp/nonexistent_sdkmanrc_dir'
+    if os.path.isdir(tmpdir):
+        for root, dirs, files in os.walk(tmpdir, topdown=False):
+            for f in files:
+                os.remove(os.path.join(root, f))
+            for d in dirs:
+                os.rmdir(os.path.join(root, d))
+        os.rmdir(tmpdir)
+    result = agent.get_java_version_from_sdkmanrc(tmpdir)
+    assert result == "Destination path does not exist or is not a directory"

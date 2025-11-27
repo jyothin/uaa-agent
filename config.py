@@ -22,17 +22,19 @@ if load_dotenv is not None:
 @dataclass(frozen=True)
 class Settings:
     model: str
+    log_level: str
     uaa_repo_url: str
     uaa_base_url: str
-    log_level: str
+    uaa_java_version: str
 
     @staticmethod
     def from_env() -> Settings:
         return Settings(
             model=os.getenv('MODEL', 'gemini-2.5-flash'),
+            log_level=os.getenv('LOG_LEVEL', 'INFO'),
             uaa_repo_url=os.getenv('UAA_REPO_URL', 'https://github.com/cloudfoundry/uaa'),
             uaa_base_url=os.getenv('UAA_BASE_URL', 'http://localhost:8080/uaa'),
-            log_level=os.getenv('LOG_LEVEL', 'INFO'),
+            uaa_java_version=os.getenv('UAA_JAVA_VERSION', '21.0.9-amzn'),
         )
 
 

@@ -24,9 +24,12 @@ class UAAServerInformationClient:
         Docs: https://docs.cloudfoundry.org/api/uaa/version/78.5.0/index.html#server-information
         """
         url = f"{self.base_url}/info"
-        response = requests.get(url, headers=self._headers())
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
 
     def get_openid_configuration(self) -> dict:
         """
@@ -35,9 +38,12 @@ class UAAServerInformationClient:
         Docs: https://docs.cloudfoundry.org/api/uaa/version/78.5.0/index.html#openid-connect-discovery
         """
         url = f"{self.base_url}/.well-known/openid-configuration"
-        response = requests.get(url, headers=self._headers())
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
 
     def create_passcode(self) -> dict:
         """
@@ -46,9 +52,12 @@ class UAAServerInformationClient:
         Docs: https://docs.cloudfoundry.org/api/uaa/version/78.5.0/index.html#passcode
         """
         url = f"{self.base_url}/passcode"
-        response = requests.post(url, headers=self._headers())
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.post(url, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
 
     def get_passcode(self) -> dict:
         """
@@ -57,9 +66,12 @@ class UAAServerInformationClient:
         Docs: https://docs.cloudfoundry.org/api/uaa/version/78.5.0/index.html#passcode
         """
         url = f"{self.base_url}/passcode"
-        response = requests.get(url, headers=self._headers())
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
 
     def get_auto_login(self) -> dict:
         """
@@ -70,9 +82,12 @@ class UAAServerInformationClient:
         url = f"{self.base_url}/autologin"
         headers = self._headers()
         headers['Content-Type'] = 'application/json'
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
 
     def create_auto_login(self, username: str, password: str) -> dict:
         """
@@ -84,9 +99,12 @@ class UAAServerInformationClient:
         headers = self._headers()
         headers['Content-Type'] = 'application/json'
         data = {'username': username, 'password': password}
-        response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
 
     def perform_login(self, code: str, client_id: str) -> dict:
         """
@@ -97,9 +115,12 @@ class UAAServerInformationClient:
         url = f"{self.base_url}/autologin"
         headers = self._headers()
         data = {'code': code, 'client_id': client_id}
-        response = requests.get(url, headers=headers, params=data)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.get(url, headers=headers, params=data)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
 
 # Example usage:
 # client = UAAServerInformationClient(base_url="https://uaa.example.com", token="YOUR_ACCESS_TOKEN")

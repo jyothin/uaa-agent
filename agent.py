@@ -31,9 +31,41 @@ try:
 except ImportError:
     from uaa_server_information import UAAServerInformationClient
 try:
-    from .uaa_admin_config import update_admin_client_secret
+    from .uaa_admin_config import (
+        update_admin_client_secret,
+        update_banner_background_color,
+        update_banner_link,
+        update_banner_logo,
+        update_banner_text,
+        update_banner_text_color,
+        update_company_name,
+        update_footer_legal_text,
+        update_footer_links,
+        update_product_logo,
+        update_square_logo,
+    )
 except ImportError:
-    from uaa_admin_config import update_admin_client_secret
+    from uaa_admin_config import (
+        update_admin_client_secret,
+        update_banner_background_color,
+        update_banner_link,
+        update_banner_logo,
+        update_banner_text,
+        update_banner_text_color,
+        update_company_name,
+        update_footer_legal_text,
+        update_footer_links,
+        update_product_logo,
+        update_square_logo,
+    )
+try:
+    from .uaa_identity_zones import UAAIdentityZonesClient
+except ImportError:
+    from uaa_identity_zones import UAAIdentityZonesClient
+try:
+    from .uaa_token import UAAClientCredentialsGrantClient
+except ImportError:
+    from uaa_token import UAAClientCredentialsGrantClient
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -54,12 +86,7 @@ logger.info('Logger initialized (script execution).')
 # root_agent initialization will occur after function definitions to ensure names are defined.
 
 
-def get_uaa_version() -> str:
-    """Get the current UAA server version (placeholder)."""
-    return ''
-
-
-def sdk_use_java_version(desired_version: str = "21.0.9-amzn") -> bool:
+def sdk_use_java_version(desired_version: str = settings.uaa_java_version) -> bool:
     """Attempt to switch the active Java version using SDKMAN.
 
     This runs `sdk use java <desired_version>` inside a login shell so that SDKMAN's environment is loaded.
@@ -117,8 +144,36 @@ def get_java_version() -> str:
     try:
         result = subprocess.run(['java', '-version'], capture_output=True, text=True, check=True)
         version_info = result.stderr.splitlines()[0]
-        if '21.0.9-amzn' in version_info:
+        if settings.uaa_java_version in version_info:
             logger.info("Detected Amazon Corretto JDK 21.0.9.")
+        else:
+            logger.debug("Java version is not Amazon Corretto 21.0.9: %s", version_info)
+        logger.info("Java version found: %s", version_info)
+        return version_info
+    except FileNotFoundError:
+        logger.error("Java is not installed or not found in PATH.")
+        return "Java not found"
+    except subprocess.CalledProcessError as e:
+        logger.error("Error occurred while checking Java version: %s", e)
+        return "Error checking Java version"
+
+
+def get_java_version_from_sdkmanrc(destination_path: str) -> str:
+    """Return the Java version string from the sdkrmanrc file in the destination path.
+
+    Returns an error string if Java is missing or the command fails.
+    """
+    try:
+        if not os.path.isdir(destination_path):
+            logger.error("Destination path does not exist or is not a directory: %s", destination_path)
+            return "Destination path does not exist or is not a directory"
+        logger.info("Changing to destination path: %s", destination_path)
+        os.chdir(destination_path)
+
+        result = subprocess.run(['cat', f'{destination_path}/.sdkmanrc'], capture_output=True, text=True, check=True)
+        version_info = result.stdout.splitlines()[0].split('=')[1]
+        if settings.uaa_java_version in version_info:
+            logger.info("Detected Amazon Corretto JDK 21.0.9 in .sdkmanrc.")
         else:
             logger.debug("Java version is not Amazon Corretto 21.0.9: %s", version_info)
         logger.info("Java version found: %s", version_info)
@@ -202,7 +257,7 @@ def stop_uaa(pid: int, grace_seconds: int = 10) -> bool:
 
 def build_uaa(destination_path: str) -> bool:
     """Build the UAA server at the given filesystem path.
-       Before building, ensure that the .sdkmanrc file is set to the desired Java version.
+       Before building, ensure that the .sdkmanrc file is set to the desired Java version using the tool get_java_version_from_sdkmanrc.
 
     Args:
         destination_path: Path to the cloned UAA repository root.
@@ -266,7 +321,7 @@ def build_uaa(destination_path: str) -> bool:
             return {"success": False, "error": "gradlew missing"}
 
 
-def run_uaa_detached(destination_path: str, java_version: str = "21.0.9-amzn") -> dict:
+def run_uaa_detached(destination_path: str, java_version: str = settings.uaa_java_version) -> dict:
     """
     Start UAA via Gradle in the background and detach.
     Returns dict with pid, stdout_log, stderr_log, success flag (launch only).
@@ -284,7 +339,8 @@ def run_uaa_detached(destination_path: str, java_version: str = "21.0.9-amzn") -
         shell_cmd = (
             'source "$HOME/.sdkman/bin/sdkman-init.sh" && '
             'sdk env && '
-            './gradlew run'
+            f'{destination_path}/scripts/boot/boot-with-tls.sh'
+            # f'CLOUDFOUNDRY_CONFIG_PATH={destination_path}/scripts/boot ./gradlew run'
         )
 
         with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
@@ -296,6 +352,16 @@ def run_uaa_detached(destination_path: str, java_version: str = "21.0.9-amzn") -
             )
 
         logger.info("Started UAA (detached) with PID %d", proc.pid)
+
+        # Save the PID to a file in the workspace root
+        try:
+            # Assuming the script is run from the workspace root, or settings.root_dir is available
+            pid_file_path = 'proc.pid'
+            with open(pid_file_path, "w") as pid_file:
+                pid_file.write(str(proc.pid))
+            logger.info("Saved UAA PID %d to %s", proc.pid, pid_file_path)
+        except Exception as e:
+            logger.error("Failed to save PID to file: %s", e)
 
         return {
             "success": True,
@@ -456,15 +522,17 @@ def ask_human_approval(prompt: str = "Do you approve this action? (y/n): ") -> b
 
 # Now initialize root_agent after function definitions
 uaa_server_information_client = UAAServerInformationClient(base_url=settings.uaa_base_url)
+uaa_identity_zones_client = UAAIdentityZonesClient(base_url=settings.uaa_base_url, token="<dummy_token>")
+uaa_client_credentials_grant_client = UAAClientCredentialsGrantClient(base_url=settings.uaa_base_url)
 root_agent = Agent(
     model=settings.model,
     name='root_agent',
     description='Agent to manage users, user authentication and user authorization.',
     instruction='You are a helpful assistant that manages a UAA server and learns about users.',
     tools=[
-        get_uaa_version,
         clone_repository,
         get_java_version,
+        get_java_version_from_sdkmanrc,
         sdk_set_sdkmanrc_file,
         sdk_use_java_version,
         clean_uaa,
@@ -481,6 +549,18 @@ root_agent = Agent(
         uaa_server_information_client.get_auto_login,
         uaa_server_information_client.create_auto_login,
         uaa_server_information_client.perform_login,
+        uaa_identity_zones_client.create_an_identity_zone,
+        uaa_client_credentials_grant_client.create_without_authorization,
+        update_banner_logo,
+        update_banner_text,
+        update_banner_text_color,
+        update_banner_background_color,
+        update_banner_link,
+        update_company_name,
+        update_product_logo,
+        update_square_logo,
+        update_footer_legal_text,
+        update_footer_links,
     ],
 )
 
