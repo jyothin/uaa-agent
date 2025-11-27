@@ -1,0 +1,26 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.7.3  # match ruff version range
+    hooks:
+      - id: ruff
+        name: ruff-lint
+        args: ["check", "."]
+      - id: ruff-format
+        name: ruff-format
+        # No args needed; runs formatter.
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+
+# Optional: add mypy or other tools later.
+#  - repo: https://github.com/pre-commit/mirrors-mypy
+#    rev: v1.11.2
+#    hooks:
+#      - id: mypy
+#        additional_dependencies: []

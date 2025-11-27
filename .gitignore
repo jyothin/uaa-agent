@@ -24,6 +24,7 @@ __pycache__/
 ## IDE/editor
 .idea/
 .vscode/
+uaa_agent.code-workspace
 
 ## OS / misc
 .DS_Store
@@ -47,3 +48,8 @@ htmlcov/
 tmp/
 *.tmp
 
+## Local diagnostics artifacts (not needed in VCS)
+diagnostics_output/
+
+# Snyk Security Extension - AI Rules (auto-generated)
+.github/instructions/snyk_rules.instructions.md

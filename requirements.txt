@@ -5,12 +5,15 @@
 GitPython>=3.1.43
 google-adk>=1.16.0
 python-dotenv>=1.0.1
+PyYAML>=6.0.1
 
 ###############################################
 # Development / QA Tools (not required in production runtime)
 ###############################################
 pytest>=8.3.3
 ruff>=0.7.3
+pre-commit>=3.8.0
+coverage>=7.6.0
 
 # NOTE:
 # - Removed 'pip' from requirements; managing installer inside requirements is unnecessary.
