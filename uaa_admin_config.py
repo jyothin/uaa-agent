@@ -1,3 +1,12 @@
+"""UAA admin and branding configuration editors.
+
+Edits `scripts/boot/uaa.yml` to:
+- update the 'admin' client secret
+- modify `login.branding` (logos, text, colors, links, company/product names, footer text/links)
+
+All helpers avoid logging sensitive values and return structured results.
+"""
+
 import base64
 import logging
 import os

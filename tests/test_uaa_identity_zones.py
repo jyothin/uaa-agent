@@ -269,3 +269,126 @@ class TestUAAIdentityZonesClient(unittest.TestCase):
 
         # Assert
         self.assertEqual(response, {"error": "UAA server is not running."})
+
+    @patch('requests.put')
+    def test_update_identity_zone_success(self, mock_put):
+        """
+        Test successful update of an identity zone.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        expected_response = {"id": "test_zone", "name": "Updated Zone", "subdomain": "updated-zone"}
+        mock_response.json.return_value = expected_response
+        mock_put.return_value = mock_response
+
+        zone_id = "test_zone"
+        subdomain = "updated-zone"
+        name = "Updated Zone"
+        description = "An updated identity zone."
+
+        # Act
+        response = self.client.update_identity_zone(zone_id, subdomain, name, description)
+
+        # Assert
+        url = f"{self.base_url}/identity-zones/{zone_id}"
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        payload = {
+            "id": zone_id,
+            "subdomain": subdomain,
+            "name": name,
+            "description": description,
+        }
+        mock_put.assert_called_once_with(url, headers=headers, json=payload)
+        self.assertEqual(response, expected_response)
+
+    @patch('requests.put')
+    def test_update_identity_zone_not_found(self, mock_put):
+        """
+        Test update of a non-existent identity zone.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 404
+        http_error = requests.exceptions.HTTPError("404 Not Found", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_put.return_value = mock_response
+
+        zone_id = "non_existent_zone"
+        subdomain = "updated-zone"
+        name = "Updated Zone"
+        description = "An updated identity zone."
+
+        # Act
+        response = self.client.update_identity_zone(zone_id, subdomain, name, description)
+
+        # Assert
+        self.assertEqual(response, {"error": f"Identity zone with ID '{zone_id}' not found."})
+
+    @patch('requests.put')
+    def test_update_identity_zone_unauthorized(self, mock_put):
+        """
+        Test unauthorized update of an identity zone.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 401
+        http_error = requests.exceptions.HTTPError("401 Unauthorized", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_put.return_value = mock_response
+
+        zone_id = "test_zone"
+        subdomain = "updated-zone"
+        name = "Updated Zone"
+        description = "An updated identity zone."
+
+        # Act
+        response = self.client.update_identity_zone(zone_id, subdomain, name, description)
+
+        # Assert
+        self.assertEqual(response, {"error": "Unauthorized: Invalid or expired token."})
+
+    @patch('requests.put')
+    def test_update_identity_zone_connection_error(self, mock_put):
+        """
+        Test connection error during identity zone update.
+        """
+        # Arrange
+        mock_put.side_effect = requests.exceptions.ConnectionError
+
+        zone_id = "test_zone"
+        subdomain = "updated-zone"
+        name = "Updated Zone"
+        description = "An updated identity zone."
+
+        # Act
+        response = self.client.update_identity_zone(zone_id, subdomain, name, description)
+
+        # Assert
+        self.assertEqual(response, {"error": "UAA server is not running."})
+
+    @patch('requests.put')
+    def test_update_identity_zone_http_error(self, mock_put):
+        """
+        Test HTTP error during identity zone update.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 500
+        http_error = requests.exceptions.HTTPError("500 Server Error", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_put.return_value = mock_response
+
+        zone_id = "test_zone"
+        subdomain = "updated-zone"
+        name = "Updated Zone"
+        description = "An updated identity zone."
+
+        # Act & Assert
+        with self.assertRaises(requests.exceptions.HTTPError):
+            self.client.update_identity_zone(zone_id, subdomain, name, description)
+

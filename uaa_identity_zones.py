@@ -9,6 +9,11 @@ import requests
 HTTP_STATUS_UNAUTHORIZED = 401
 HTTP_STATUS_NOT_FOUND = 404
 
+
+def set_token_for_uaa_identity_zones_client(token: str) -> None:
+    """Set the token for the UAAIdentityZonesClient class variable."""
+    UAAIdentityZonesClient.token = token
+
 class UAAIdentityZonesClient:
     """
     A client for interacting with the UAA Identity Zones API.
@@ -115,6 +120,45 @@ class UAAIdentityZonesClient:
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == HTTP_STATUS_UNAUTHORIZED:
                 return {"error": "Unauthorized: Invalid or expired token."}
+            raise e
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
+
+    def update_identity_zone(
+        self,
+        zone_id: str,
+        subdomain: str,
+        name: str,
+        description: str
+    ) -> dict:
+        """
+        Updates an existing identity zone.
+
+        Args:
+            zone_id: The ID of the identity zone to update.
+            subdomain: The updated subdomain for the identity zone.
+            name: The updated name of the identity zone.
+            description: The updated description for the identity zone.
+
+        Returns:
+            The response from the UAA server.
+        """
+        url = f"{self.base_url}/identity-zones/{zone_id}"
+        payload = {
+            "id": zone_id,
+            "subdomain": subdomain,
+            "name": name,
+            "description": description,
+        }
+        try:
+            response = requests.put(url, headers=self._headers(), json=payload)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == HTTP_STATUS_UNAUTHORIZED:
+                return {"error": "Unauthorized: Invalid or expired token."}
+            if e.response.status_code == HTTP_STATUS_NOT_FOUND:
+                return {"error": f"Identity zone with ID '{zone_id}' not found."}
             raise e
         except requests.exceptions.ConnectionError:
             return {"error": "UAA server is not running."}
