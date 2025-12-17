@@ -1,8 +1,8 @@
+import base64
 import logging
 import os
 
 import yaml
-import base64
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +10,7 @@ def update_admin_client_secret(destination_path: str, client_secret: str):
     """
     Updates the client_secret for the 'admin' client ID in the uaa.yml file.
     Ensure all sensitive data is masked in logs and outputs.
+    DO NOT echo any client secrets in the repsonses or logs.
     """
     if not os.path.exists(destination_path):
         return {"status": "error", "message": f"{destination_path} not found"}

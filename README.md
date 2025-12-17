@@ -177,6 +177,7 @@ Go to the parent directory under which you see the `uaa_agent` folder
 
 Run as a CLI
 ```bash
+cd ..
 adk run uaa_agent
 ```
 
@@ -184,3 +185,20 @@ Run as a webapp
 ```bash
 adk web --port 8000
 ```
+
+# What can the agent do?
+
+- Clone a UAA repository in a local path
+- Set the Java Version
+- Clean the Project
+- Set the 'admin' client's client secret
+- Set the product logo
+- Set the square logo
+- Check if SSL certificates exist
+- Create a server side SSL certificate
+- Build/Assemble the Project
+- Run the UAA server in detached mode
+- Check if a UAA server is running
+- Create a token for a client
+- Create an identify zone
+- List identity zones

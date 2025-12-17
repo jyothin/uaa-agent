@@ -65,7 +65,9 @@ class TestUAAClientCredentialsGrantClient(unittest.TestCase):
         """
         # Arrange
         mock_response = Mock()
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("401 Unauthorized")
+        mock_response.status_code = 401
+        http_error = requests.exceptions.HTTPError("401 Unauthorized", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
         mock_post.return_value = mock_response
 
         client_id = "test_client"
@@ -91,6 +93,28 @@ class TestUAAClientCredentialsGrantClient(unittest.TestCase):
 
         # Assert
         self.assertEqual(result, {"error": "UAA server is not running."})
+
+    @patch('requests.post')
+    def test_create_without_authorization_bad_request(self, mock_post):
+        """
+        Test bad request error during token retrieval.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 400
+        http_error = requests.exceptions.HTTPError("400 Bad Request", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_post.return_value = mock_response
+
+        client_id = "invalid_client"
+        client_secret = "test_secret"
+
+        # Act
+        result = self.client.create_without_authorization(client_id, client_secret, "", [])
+
+        # Assert
+        self.assertEqual(result, {"error": "Bad Request: The UAA server could not process the token request. "
+                                         "Please check the client ID, secret, and grant type."})
 
 
 if __name__ == '__main__':
