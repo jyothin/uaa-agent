@@ -1,11 +1,12 @@
 """
-Python client for the UAA API endpoints for tokens.
+Python client for the UAA API endpoints for tokens (version 78.5.0)
+Docs: https://docs.cloudfoundry.org/api/uaa/version/78.5.0/index.html#token
 """
 
 
 import requests
 
-
+HTTP_STATUS_BAD_REQUEST = 400
 class UAAClientCredentialsGrantClient:
     """
     A client for interacting with the UAA's client credentials grant functionality.
@@ -57,5 +58,10 @@ class UAAClientCredentialsGrantClient:
             response = requests.post(url, headers=headers, data=data)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == HTTP_STATUS_BAD_REQUEST:
+                return {"error": "Bad Request: The UAA server could not process the token request. "
+                                 "Please check the client ID, secret, and grant type."}
+            raise e
         except requests.exceptions.ConnectionError:
             return {"error": "UAA server is not running."}

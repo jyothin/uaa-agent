@@ -1,27 +1,30 @@
 """
-Python client for Cloud Foundry UAA Identity Zones API
+Python client for Cloud Foundry UAA Identity Zones API (version 78.5.0)
 Docs: https://docs.cloudfoundry.org/api/uaa/version/78.5.0/index.html#identity-zones
 """
 
 
 import requests
 
+HTTP_STATUS_UNAUTHORIZED = 401
+HTTP_STATUS_NOT_FOUND = 404
 
 class UAAIdentityZonesClient:
     """
     A client for interacting with the UAA Identity Zones API.
     """
 
-    def __init__(self, base_url: str, token: str):
+    token = "<dummy token>"
+
+    def __init__(self, base_url: str):
         """
         Initializes the UAAIdentityZonesClient.
 
         Args:
             base_url: The base URL of the UAA server.
-            token: The OAuth2 bearer token for authentication.
         """
         self.base_url = base_url.rstrip('/')
-        self.token = token
+
 
     def _headers(self) -> dict:
         """
@@ -31,7 +34,7 @@ class UAAIdentityZonesClient:
             A dictionary of request headers.
         """
         return {
-            'Authorization': f'Bearer {self.token}',
+            'Authorization': f'Bearer {UAAIdentityZonesClient.token}',
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         }
@@ -66,5 +69,52 @@ class UAAIdentityZonesClient:
             response = requests.post(url, headers=self._headers(), json=payload)
             response.raise_for_status()
             return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == HTTP_STATUS_UNAUTHORIZED:
+                return {"error": "Unauthorized: Invalid or expired token."}
+            raise e
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
+
+    def get_identity_zone(self, zone_id: str) -> dict:
+        """
+        Retrieves an identity zone by its ID.
+
+        Args:
+            zone_id: The ID of the identity zone to retrieve.
+
+        Returns:
+            The response from the UAA server.
+        """
+        url = f"{self.base_url}/identity-zones/{zone_id}"
+        try:
+            response = requests.get(url, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == HTTP_STATUS_UNAUTHORIZED:
+                return {"error": "Unauthorized: Invalid or expired token."}
+            if e.response.status_code == HTTP_STATUS_NOT_FOUND:
+                return {"error": f"Identity zone with ID '{zone_id}' not found."}
+            raise e
+        except requests.exceptions.ConnectionError:
+            return {"error": "UAA server is not running."}
+
+    def get_all_identity_zones(self) -> dict:
+        """
+        Retrieves all identity zones.
+
+        Returns:
+            The response from the UAA server.
+        """
+        url = f"{self.base_url}/identity-zones"
+        try:
+            response = requests.get(url, headers=self._headers())
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == HTTP_STATUS_UNAUTHORIZED:
+                return {"error": "Unauthorized: Invalid or expired token."}
+            raise e
         except requests.exceptions.ConnectionError:
             return {"error": "UAA server is not running."}

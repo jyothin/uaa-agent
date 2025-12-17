@@ -321,6 +321,135 @@ def build_uaa(destination_path: str) -> bool:
             return {"success": False, "error": "gradlew missing"}
 
 
+def assemble_uaa(destination_path: str) -> bool:
+    """Assemble the UAA server at the given filesystem path.
+       Before assembling, ensure that the .sdkmanrc file is set to the desired Java version using the tool get_java_version_from_sdkmanrc.
+
+    Args:
+        destination_path: Path to the cloned UAA repository root.
+    Returns:
+        True if the Gradle assemble succeeds, otherwise False.
+    """
+    try:
+        if not os.path.isdir(destination_path):
+            logger.error("Destination path does not exist or is not a directory: %s", destination_path)
+            return False
+        logger.info("Changing to destination path: %s", destination_path)
+        os.chdir(destination_path)
+
+        result: dict[str, object] = {}
+
+        def _run_assemble() -> None:
+            try:
+                # Use .sdkmanrc to set Java version, activate SDKMAN env, then build with Gradle.
+                shell_cmd = (
+                    'source "$HOME/.sdkman/bin/sdkman-init.sh" && '
+                    'sdk env && '
+                    './gradlew assemble'
+                )
+                proc = subprocess.run(
+                    ['bash', '-lc', shell_cmd],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=600  # Optional: prevent hanging assembles (adjust as needed)
+                )
+                result['stdout'] = proc.stdout
+                result['stderr'] = proc.stderr
+                result['success'] = proc.returncode == 0
+            except Exception as exc:  # capture any failure
+                result['error'] = exc
+                result['success'] = False
+
+        logger.info("Starting assemble in background thread...\n")
+        thread = threading.Thread(target=_run_assemble, daemon=False)
+        thread.start()
+        thread.join()  # Wait until assemble completes (can be extended with timeout if needed)
+
+        if result.get('success'):
+            stderr = result.get('stderr')
+            if stderr:
+                logger.debug("Build stderr:\n%s", stderr)
+            return True
+        else:
+            error = result.get('error')
+            if error:
+                logger.error("Gradle build failed: %s", error)
+            return False
+    except Exception as e:
+        logger.error("Assemble or run failed: %s", e)
+        return False
+
+
+def check_certificates_exist(destination_path: str) -> bool:
+    """Check if the required UAA certificates exist in the specified path.
+
+    Args:
+        destination_path: Path to the cloned UAA repository root.
+    Returns:
+        True if all required certificate files exist, otherwise False.
+    """
+    required_files = [
+        os.path.join(destination_path, "scripts/certificates", "uaa_keystore.p12"),
+    ]
+
+    for file_path in required_files:
+        if not os.path.isfile(file_path):
+            logger.warning("Required certificate file not found: %s", file_path)
+            return False
+    logger.info("All required certificate files are present.")
+    return True
+
+
+def generate_certificate(destination_path: str) -> dict:
+    """
+    Generate certificates in the background and detach.
+    Returns dict with pid, stdout_log, stderr_log, success flag (launch only).
+    """
+    try:
+        if not os.path.isdir(destination_path):
+            logger.error("Destination path invalid: %s", destination_path)
+            return {"success": False, "error": "invalid path"}
+        os.chdir(destination_path)
+
+        stdout_log = os.path.join(destination_path, "uaa_run.out")
+        stderr_log = os.path.join(destination_path, "uaa_run.err")
+
+        shell_cmd = (
+            f'{destination_path}/scripts/certificates/generate.sh'
+        )
+
+        with open(stdout_log, "w") as stdout_file, open(stderr_log, "w") as stderr_file:
+            proc = subprocess.Popen(
+                ['bash', '-lc', shell_cmd],
+                stdout=stdout_file,
+                stderr=stderr_file,
+                start_new_session=True  # Detach process group
+            )
+
+        logger.info("Generated certificates with PID %d", proc.pid)
+
+        # Save the PID to a file in the workspace root
+        try:
+            # Assuming the script is run from the workspace root, or settings.root_dir is available
+            pid_file_path = 'proc.pid'
+            with open(pid_file_path, "w") as pid_file:
+                pid_file.write(str(proc.pid))
+            logger.info("Saved certificates PID %d to %s", proc.pid, pid_file_path)
+        except Exception as e:
+            logger.error("Failed to save PID to file: %s", e)
+
+        return {
+            "success": True,
+            "pid": proc.pid,
+            "stdout_log": stdout_log,
+            "stderr_log": stderr_log,
+        }
+    except Exception as e:
+        logger.error("Failed to generate certificates detached: %s", e)
+        return {"success": False, "error": str(e)}
+
+
 def run_uaa_detached(destination_path: str, java_version: str = settings.uaa_java_version) -> dict:
     """
     Start UAA via Gradle in the background and detach.
@@ -520,9 +649,14 @@ def ask_human_approval(prompt: str = "Do you approve this action? (y/n): ") -> b
             print("Please enter 'y' or 'n'.")
 
 
+def set_token_for_uaa_identity_zones_client(token: str) -> None:
+    """Set the token for the UAAIdentityZonesClient class variable."""
+    UAAIdentityZonesClient.token = token
+
+
 # Now initialize root_agent after function definitions
 uaa_server_information_client = UAAServerInformationClient(base_url=settings.uaa_base_url)
-uaa_identity_zones_client = UAAIdentityZonesClient(base_url=settings.uaa_base_url, token="<dummy_token>")
+uaa_identity_zones_client = UAAIdentityZonesClient(base_url=settings.uaa_base_url)
 uaa_client_credentials_grant_client = UAAClientCredentialsGrantClient(base_url=settings.uaa_base_url)
 root_agent = Agent(
     model=settings.model,
@@ -536,21 +670,15 @@ root_agent = Agent(
         sdk_set_sdkmanrc_file,
         sdk_use_java_version,
         clean_uaa,
-        build_uaa,
         update_admin_client_secret,
+        # build_uaa,
+        assemble_uaa,
+        check_certificates_exist,
+        generate_certificate,
         run_uaa_detached,
         wait_for_port,
         stop_uaa,
         # ask_human_approval,
-        uaa_server_information_client.get_server_information,
-        uaa_server_information_client.get_openid_configuration,
-        uaa_server_information_client.create_passcode,
-        uaa_server_information_client.get_passcode,
-        uaa_server_information_client.get_auto_login,
-        uaa_server_information_client.create_auto_login,
-        uaa_server_information_client.perform_login,
-        uaa_identity_zones_client.create_an_identity_zone,
-        uaa_client_credentials_grant_client.create_without_authorization,
         update_banner_logo,
         update_banner_text,
         update_banner_text_color,
@@ -561,6 +689,18 @@ root_agent = Agent(
         update_square_logo,
         update_footer_legal_text,
         update_footer_links,
+        uaa_server_information_client.get_server_information,
+        uaa_server_information_client.get_openid_configuration,
+        uaa_server_information_client.create_passcode,
+        uaa_server_information_client.get_passcode,
+        uaa_server_information_client.get_auto_login,
+        uaa_server_information_client.create_auto_login,
+        uaa_server_information_client.perform_login,
+        set_token_for_uaa_identity_zones_client,
+        uaa_identity_zones_client.create_an_identity_zone,
+        uaa_identity_zones_client.get_identity_zone,
+        uaa_identity_zones_client.get_all_identity_zones,
+        uaa_client_credentials_grant_client.create_without_authorization,
     ],
 )
 

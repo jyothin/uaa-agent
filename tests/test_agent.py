@@ -1,9 +1,10 @@
 import os
 import time
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, mock_open, patch
 
 # Import the module under test
 import agent
+from uaa_identity_zones import UAAIdentityZonesClient
 
 ONE = 1
 TWO = 2
@@ -353,3 +354,193 @@ def test_get_java_version_from_sdkmanrc_no_directory(mock_run):
         os.rmdir(tmpdir)
     result = agent.get_java_version_from_sdkmanrc(tmpdir)
     assert result == "Destination path does not exist or is not a directory"
+
+
+@patch('agent.subprocess.run')
+def test_assemble_uaa_success(mock_run):
+    # Simulate successful assemble
+    mock_run.return_value = MagicMock(stdout='Success', returncode=0)
+    tmpdir = '/tmp/test_assemble_uaa_success'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        # Should succeed if directory exists and subprocess.run returns success
+        result = agent.assemble_uaa(tmpdir)
+        assert result is True
+        mock_run.assert_called_once_with(['bash', '-lc', 'source "$HOME/.sdkman/bin/sdkman-init.sh" && sdk env && ./gradlew assemble'], check=True, capture_output=True, text=True, timeout=600)
+    finally:
+        # Cleanup
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_assemble_uaa_failure(mock_run):
+    # Simulate assemble failure
+    mock_run.side_effect = Exception('Assemble failed')
+    tmpdir = '/tmp/test_assemble_uaa_failure'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.assemble_uaa(tmpdir)
+        assert result is False
+        mock_run.assert_called_once_with([
+            'bash', '-lc', 'source "$HOME/.sdkman/bin/sdkman-init.sh" && sdk env && ./gradlew assemble'
+        ], check=True, capture_output=True, text=True, timeout=600)
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.run')
+def test_assemble_uaa_no_directory(mock_run):
+    # Directory does not exist
+    tmpdir = '/tmp/nonexistent_assemble_uaa_dir'
+    if os.path.isdir(tmpdir):
+        for root, dirs, files in os.walk(tmpdir, topdown=False):
+            for f in files:
+                os.remove(os.path.join(root, f))
+            for d in dirs:
+                os.rmdir(os.path.join(root, d))
+        os.rmdir(tmpdir)
+    result = agent.assemble_uaa(tmpdir)
+    assert result is False
+
+
+def test_check_certificates_exist_success():
+    # Create a temporary directory and the required certificate file
+    tmpdir = '/tmp/test_check_certificates_exist_success'
+    cert_path = os.path.join(tmpdir, "scripts/certificates")
+    os.makedirs(cert_path, exist_ok=True)
+    cert_file = os.path.join(cert_path, "uaa_keystore.p12")
+    with open(cert_file, 'w') as f:
+        f.write('dummy cert')
+    
+    try:
+        result = agent.check_certificates_exist(tmpdir)
+        assert result is True
+    finally:
+        # Cleanup
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+def test_check_certificates_exist_failure():
+    # Create a temporary directory without the certificate file
+    tmpdir = '/tmp/test_check_certificates_exist_failure'
+    os.makedirs(tmpdir, exist_ok=True)
+    
+    try:
+        result = agent.check_certificates_exist(tmpdir)
+        assert result is False
+    finally:
+        # Cleanup
+        if os.path.isdir(tmpdir):
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.Popen')
+@patch('builtins.open', new_callable=mock_open)
+def test_generate_certificate_success(mock_file_open, mock_popen):
+    # Simulate successful Popen
+    mock_proc = MagicMock()
+    mock_proc.pid = TEST_PID
+    mock_popen.return_value = mock_proc
+
+    tmpdir = '/tmp/test_generate_certificate_success'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.generate_certificate(tmpdir)
+        assert result['success'] is True
+        assert result['pid'] == TEST_PID
+        
+        shell_cmd = (
+            f'{tmpdir}/scripts/certificates/generate.sh'
+        )
+        
+        # Get the arguments from the mock call
+        call_args, call_kwargs = mock_popen.call_args
+        
+        # Check the command
+        assert call_args[0] == ['bash', '-lc', shell_cmd]
+        
+        # Check other parameters
+        assert 'start_new_session' in call_kwargs and call_kwargs['start_new_session'] is True
+        assert 'stdout' in call_kwargs
+        assert 'stderr' in call_kwargs
+
+        # Check that the PID file was written
+        mock_file_open.assert_any_call('proc.pid', 'w')
+        mock_file_open().write.assert_called_once_with(str(TEST_PID))
+
+    finally:
+        if os.path.isdir(tmpdir):
+            # Clean up the directory
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for name in files:
+                    os.remove(os.path.join(root, name))
+                for name in dirs:
+                    os.rmdir(os.path.join(root, name))
+            os.rmdir(tmpdir)
+
+
+@patch('agent.subprocess.Popen')
+def test_generate_certificate_failure(mock_popen):
+    # Simulate Popen failure
+    mock_popen.side_effect = Exception('Popen failed')
+    tmpdir = '/tmp/test_generate_certificate_failure'
+    os.makedirs(tmpdir, exist_ok=True)
+    try:
+        result = agent.generate_certificate(tmpdir)
+        assert result['success'] is False
+        assert 'error' in result
+    finally:
+        if os.path.isdir(tmpdir):
+            for root, dirs, files in os.walk(tmpdir, topdown=False):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    os.rmdir(os.path.join(root, d))
+            os.rmdir(tmpdir)
+
+
+def test_generate_certificate_no_directory():
+    # Directory does not exist
+    tmpdir = '/tmp/nonexistent_cert_dir'
+    if os.path.isdir(tmpdir):
+        os.rmdir(tmpdir)
+    result = agent.generate_certificate(tmpdir)
+    assert result['success'] is False
+    assert result['error'] == 'invalid path'
+
+
+def test_set_token_for_uaa_identity_zones_client():
+    """
+    Test that the token for the UAAIdentityZonesClient can be set correctly.
+    """
+    # Given
+    original_token = UAAIdentityZonesClient.token
+    new_token = "new-test-token"
+    assert original_token != new_token
+
+    # When
+    agent.set_token_for_uaa_identity_zones_client(new_token)
+
+    # Then
+    assert UAAIdentityZonesClient.token == new_token
+
+    # Reset token to original value to avoid side effects in other tests
+    UAAIdentityZonesClient.token = original_token

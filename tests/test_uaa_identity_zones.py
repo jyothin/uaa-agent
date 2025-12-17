@@ -21,7 +21,15 @@ class TestUAAIdentityZonesClient(unittest.TestCase):
         """
         self.base_url = "http://localhost:8080/uaa"
         self.token = "test_token"
-        self.client = UAAIdentityZonesClient(self.base_url, self.token)
+        self.client = UAAIdentityZonesClient(self.base_url)
+        self.original_token = UAAIdentityZonesClient.token
+        UAAIdentityZonesClient.token = self.token
+
+    def tearDown(self):
+        """
+        Tear down the test client.
+        """
+        UAAIdentityZonesClient.token = self.original_token
 
     @patch('requests.post')
     def test_create_an_identity_zone_success(self, mock_post):
@@ -66,7 +74,9 @@ class TestUAAIdentityZonesClient(unittest.TestCase):
         """
         # Arrange
         mock_response = Mock()
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError("409 Conflict")
+        mock_response.status_code = 409
+        http_error = requests.exceptions.HTTPError("409 Conflict", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
         mock_post.return_value = mock_response
 
         zone_id = "existing_zone"
@@ -97,6 +107,165 @@ class TestUAAIdentityZonesClient(unittest.TestCase):
         # Assert
         self.assertEqual(result, {"error": "UAA server is not running."})
 
+    @patch('requests.post')
+    def test_create_an_identity_zone_unauthorized_error(self, mock_post):
+        """
+        Test unauthorized error during identity zone creation.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 401
+        http_error = requests.exceptions.HTTPError("401 Client Error: Unauthorized for url", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_post.return_value = mock_response
 
-if __name__ == '__main__':
-    unittest.main()
+        zone_id = "test_zone"
+        subdomain = "test-zone"
+        name = "Test Zone"
+        description = "A test identity zone."
+
+        # Act
+        result = self.client.create_an_identity_zone(zone_id, subdomain, name, description)
+
+        # Assert
+        self.assertEqual(result, {"error": "Unauthorized: Invalid or expired token."})
+
+    @patch('requests.get')
+    def test_get_identity_zone_success(self, mock_get):
+        """
+        Test successful retrieval of an identity zone.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        expected_response = {"id": "test_zone", "name": "Test Zone"}
+        mock_response.json.return_value = expected_response
+        mock_get.return_value = mock_response
+
+        zone_id = "test_zone"
+
+        # Act
+        response = self.client.get_identity_zone(zone_id)
+
+        # Assert
+        url = f"{self.base_url}/identity-zones/{zone_id}"
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        mock_get.assert_called_once_with(url, headers=headers)
+        self.assertEqual(response, expected_response)
+
+    @patch('requests.get')
+    def test_get_identity_zone_not_found(self, mock_get):
+        """
+        Test identity zone not found.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 404
+        http_error = requests.exceptions.HTTPError("404 Not Found", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_get.return_value = mock_response
+
+        zone_id = "non_existent_zone"
+
+        # Act
+        response = self.client.get_identity_zone(zone_id)
+
+        # Assert
+        self.assertEqual(response, {"error": f"Identity zone with ID '{zone_id}' not found."})
+
+    @patch('requests.get')
+    def test_get_identity_zone_unauthorized(self, mock_get):
+        """
+        Test unauthorized retrieval of an identity zone.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 401
+        http_error = requests.exceptions.HTTPError("401 Unauthorized", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_get.return_value = mock_response
+
+        zone_id = "test_zone"
+
+        # Act
+        response = self.client.get_identity_zone(zone_id)
+
+        # Assert
+        self.assertEqual(response, {"error": "Unauthorized: Invalid or expired token."})
+
+    @patch('requests.get')
+    def test_get_identity_zone_connection_error(self, mock_get):
+        """
+        Test connection error during identity zone retrieval.
+        """
+        # Arrange
+        mock_get.side_effect = requests.exceptions.ConnectionError
+
+        zone_id = "test_zone"
+
+        # Act
+        response = self.client.get_identity_zone(zone_id)
+
+        # Assert
+        self.assertEqual(response, {"error": "UAA server is not running."})
+
+    @patch('requests.get')
+    def test_get_all_identity_zones_success(self, mock_get):
+        """
+        Test successful retrieval of all identity zones.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        expected_response = [{"id": "zone1", "name": "Zone 1"}, {"id": "zone2", "name": "Zone 2"}]
+        mock_response.json.return_value = expected_response
+        mock_get.return_value = mock_response
+
+        # Act
+        response = self.client.get_all_identity_zones()
+
+        # Assert
+        url = f"{self.base_url}/identity-zones"
+        headers = {
+            'Authorization': f'Bearer {self.token}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        mock_get.assert_called_once_with(url, headers=headers)
+        self.assertEqual(response, expected_response)
+
+    @patch('requests.get')
+    def test_get_all_identity_zones_unauthorized(self, mock_get):
+        """
+        Test unauthorized retrieval of all identity zones.
+        """
+        # Arrange
+        mock_response = Mock()
+        mock_response.status_code = 401
+        http_error = requests.exceptions.HTTPError("401 Unauthorized", response=mock_response)
+        mock_response.raise_for_status.side_effect = http_error
+        mock_get.return_value = mock_response
+
+        # Act
+        response = self.client.get_all_identity_zones()
+
+        # Assert
+        self.assertEqual(response, {"error": "Unauthorized: Invalid or expired token."})
+
+    @patch('requests.get')
+    def test_get_all_identity_zones_connection_error(self, mock_get):
+        """
+        Test connection error during retrieval of all identity zones.
+        """
+        # Arrange
+        mock_get.side_effect = requests.exceptions.ConnectionError
+
+        # Act
+        response = self.client.get_all_identity_zones()
+
+        # Assert
+        self.assertEqual(response, {"error": "UAA server is not running."})
